@@ -4,7 +4,7 @@ import GameController
 import SwiftUI
 
 enum InputAction: Equatable {
-    case up, down, left, right, confirm, back, guide, banner
+    case up, down, left, right, confirm, back, guide, banner, prevTab, nextTab
 }
 
 /// Entrées manette (GameController) + repli clavier pour le développement.
@@ -15,6 +15,8 @@ final class ControllerInput: ObservableObject {
     @Published private(set) var actionID: Int = 0
 
     private var keyMonitor: Any?
+    private var stickDirection: InputAction?
+    private var repeatTask: Task<Void, Never>?
 
     func start() {
         guard keyMonitor == nil else { return }
@@ -29,7 +31,9 @@ final class ControllerInput: ObservableObject {
             case 124: .right
             case 36, 49: .confirm   // Entrée / Espace
             case 53, 51: .back      // Échap / Retour arrière
-            case 11: .banner        // B : changer la bannière
+            case 11: .banner        // B : modifier le jeu
+            case 12: .prevTab       // Q : catégorie précédente (L1)
+            case 14: .nextTab       // E : catégorie suivante (R1)
             default: nil
             }
             if let action {
@@ -63,12 +67,47 @@ final class ControllerInput: ObservableObject {
         pad.buttonB.pressedChangedHandler = { [weak self] _, _, pressed in
             if pressed { Task { @MainActor in self?.emit(.back) } }
         }
+        // Stick gauche : direction dominante, avec répétition tant que le stick reste poussé.
+        pad.leftThumbstick.valueChangedHandler = { [weak self] _, x, y in
+            Task { @MainActor in self?.updateStick(x: x, y: y) }
+        }
+        pad.leftShoulder.pressedChangedHandler = { [weak self] _, _, pressed in
+            if pressed { Task { @MainActor in self?.emit(.prevTab) } }
+        }
+        pad.rightShoulder.pressedChangedHandler = { [weak self] _, _, pressed in
+            if pressed { Task { @MainActor in self?.emit(.nextTab) } }
+        }
         pad.buttonY.pressedChangedHandler = { [weak self] _, _, pressed in
             if pressed { Task { @MainActor in self?.emit(.banner) } }
         }
         pad.buttonMenu.pressedChangedHandler = { [weak self] _, _, pressed in
             // La touche Guide est le sujet de l'overlay (jalon 2). Ici on la reçoit si l'OS la transmet.
             if pressed { Task { @MainActor in self?.emit(.guide) } }
+        }
+    }
+
+    private func updateStick(x: Float, y: Float) {
+        let threshold: Float = 0.5
+        let direction: InputAction?
+        if abs(x) < threshold && abs(y) < threshold {
+            direction = nil
+        } else if abs(y) > abs(x) {
+            direction = y > 0 ? .up : .down
+        } else {
+            direction = x > 0 ? .right : .left
+        }
+        guard direction != stickDirection else { return }
+        stickDirection = direction
+        repeatTask?.cancel()
+        repeatTask = nil
+        guard let direction else { return }
+        emit(direction)
+        repeatTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            while !Task.isCancelled {
+                self?.emit(direction)
+                try? await Task.sleep(nanoseconds: 150_000_000)
+            }
         }
     }
 

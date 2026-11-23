@@ -25,6 +25,8 @@ struct XMBView: View {
     @State private var detailGameID: UUID?
     @State private var detailFocus: DetailAction = .start
     @State private var editingGameID: UUID?
+    /// Échelle courante, mise à jour quand la fenêtre change de taille.
+    @State private var scale: CGFloat = 1
 
     private var category: Category { Category.allCases[categoryIndex] }
 
@@ -36,11 +38,20 @@ struct XMBView: View {
     }
 
     var body: some View {
-        ZStack {
-            if let game = detailGame {
-                GameDetailView(game: game, focus: detailFocus)
-            } else {
-                browser
+        GeometryReader { geo in
+            ZStack {
+                LumenBackground()
+                if let game = detailGame {
+                    GameDetailView(game: game, focus: detailFocus)
+                } else {
+                    browser
+                }
+            }
+            .environment(\.uiScale, scale)
+            .frame(width: geo.size.width, height: geo.size.height)
+            .onAppear { scale = LumenLayout.scale(for: geo.size) }
+            .onChange(of: geo.size) { newSize in
+                scale = LumenLayout.scale(for: newSize)
             }
         }
         .foregroundStyle(.white)
@@ -59,26 +70,18 @@ struct XMBView: View {
     }
 
     private var browser: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color(red: 0.05, green: 0.10, blue: 0.30), Color(red: 0.02, green: 0.03, blue: 0.10)],
-                startPoint: .top, endPoint: .bottom
-            )
-            .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                Spacer().frame(height: 90)
-                categoryBar
-                Spacer().frame(height: 48)
-                HStack(alignment: .top, spacing: 0) {
-                    Spacer()
-                    itemList
-                        .frame(maxWidth: 760)   // lisible même sur 3440×1440
-                    Spacer()
-                }
+        VStack(spacing: 0) {
+            categoryBar
+                .padding(.top, 90 * scale)
+            Spacer().frame(height: 48 * scale)
+            HStack(alignment: .top, spacing: 0) {
                 Spacer()
-                footer
+                itemList
+                    .frame(maxWidth: 760 * scale)   // lisible même sur 3440×1440
+                Spacer()
             }
+            Spacer()
+            footer
         }
     }
 
@@ -88,20 +91,20 @@ struct XMBView: View {
         HStack(spacing: 0) {
             ForEach(Array(Category.allCases.enumerated()), id: \.element.id) { index, cat in
                 let selected = index == categoryIndex
-                VStack(spacing: 10) {
+                VStack(spacing: 10 * scale) {
                     Image(systemName: cat.symbol)
-                        .font(.system(size: selected ? 64 : 40))
-                        .frame(width: 96, height: 96)
+                        .font(.system(size: (selected ? 64 : 40) * scale))
+                        .frame(width: 96 * scale, height: 96 * scale)
                         .opacity(selected ? 1 : 0.45)
                     Text(cat.rawValue)
-                        .font(.system(size: 18, weight: selected ? .semibold : .regular))
+                        .font(.system(size: 18 * scale, weight: selected ? .semibold : .regular))
                         .opacity(selected ? 1 : 0.0)
                 }
                 .frame(maxWidth: .infinity)
                 .animation(.easeOut(duration: 0.2), value: categoryIndex)
             }
         }
-        .padding(.horizontal, 40)
+        .padding(.horizontal, 40 * scale)
     }
 
     // MARK: - Éléments
@@ -109,7 +112,7 @@ struct XMBView: View {
     @ViewBuilder
     private var itemList: some View {
         if category == .games {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 14 * scale) {
                 textRow(title: "+ Ajouter une application", symbol: "plus.circle", selected: itemIndex == 0)
                 ForEach(Array(library.games.enumerated()), id: \.element.id) { index, game in
                     bannerCard(game: game, selected: itemIndex == index + 1)
@@ -121,14 +124,14 @@ struct XMBView: View {
     }
 
     private func textRow(title: String, symbol: String, selected: Bool) -> some View {
-        HStack(spacing: 16) {
-            Image(systemName: symbol).font(.system(size: 26)).frame(width: 40, height: 40)
-            Text(title).font(.system(size: selected ? 28 : 22, weight: selected ? .semibold : .regular))
+        HStack(spacing: 16 * scale) {
+            Image(systemName: symbol).font(.system(size: 26 * scale)).frame(width: 40 * scale, height: 40 * scale)
+            Text(title).font(.system(size: (selected ? 28 : 22) * scale, weight: selected ? .semibold : .regular))
             Spacer()
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(selected ? Color.white.opacity(0.18) : .clear))
+        .padding(.horizontal, 20 * scale)
+        .padding(.vertical, 12 * scale)
+        .background(RoundedRectangle(cornerRadius: 12 * scale).fill(selected ? Color.white.opacity(0.18) : .clear))
         .opacity(selected ? 1 : 0.6)
         .animation(.easeOut(duration: 0.15), value: itemIndex)
     }
@@ -139,13 +142,13 @@ struct XMBView: View {
             Artwork(image: library.artwork(.banner, for: game), fallback: game.name)
             LinearGradient(colors: [.black.opacity(0.85), .clear], startPoint: .bottom, endPoint: .center)
             Text(game.name)
-                .font(.system(size: selected ? 26 : 20, weight: .semibold))
-                .padding(16)
+                .font(.system(size: (selected ? 26 : 20) * scale, weight: .semibold))
+                .padding(16 * scale)
         }
-        .frame(height: selected ? 200 : 150)
+        .frame(height: (selected ? 200 : 150) * scale)
         .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(selected ? 0.9 : 0), lineWidth: 2))
+        .clipShape(RoundedRectangle(cornerRadius: 14 * scale))
+        .overlay(RoundedRectangle(cornerRadius: 14 * scale).stroke(.white.opacity(selected ? 0.9 : 0), lineWidth: 2))
         .opacity(selected ? 1 : 0.6)
         .scaleEffect(selected ? 1 : 0.97)
         .animation(.easeOut(duration: 0.15), value: itemIndex)
@@ -153,13 +156,13 @@ struct XMBView: View {
 
     private var footer: some View {
         HStack {
-            Text("Croix / Entrée : ouvrir   ·   Y / B : modifier le jeu   ·   Rond / Échap : retour   ·   Guide : overlay")
-                .font(.caption)
+            Text("Stick / Croix : naviguer et ouvrir   ·   L1 / R1 : catégories   ·   Y : modifier   ·   Rond : retour   ·   Guide : overlay")
+                .font(.system(size: 12 * scale))
                 .opacity(0.6)
             Spacer()
         }
-        .padding(.horizontal, 40)
-        .padding(.bottom, 24)
+        .padding(.horizontal, 40 * scale)
+        .padding(.bottom, 24 * scale)
     }
 
     // MARK: - Navigation
@@ -175,6 +178,8 @@ struct XMBView: View {
         switch action {
         case .left: categoryIndex = max(0, categoryIndex - 1); itemIndex = 0
         case .right: categoryIndex = min(Category.allCases.count - 1, categoryIndex + 1); itemIndex = 0
+        case .prevTab: categoryIndex = max(0, categoryIndex - 1); itemIndex = 0
+        case .nextTab: categoryIndex = min(Category.allCases.count - 1, categoryIndex + 1); itemIndex = 0
         case .up: itemIndex = max(0, itemIndex - 1)
         case .down: itemIndex = min(itemCount - 1, itemIndex + 1)
         case .confirm: openSelection()
@@ -194,7 +199,7 @@ struct XMBView: View {
             }
         case .banner: editingGameID = game.id
         case .back: detailGameID = nil; detailFocus = .start
-        case .up, .down, .guide: break
+        case .up, .down, .prevTab, .nextTab, .guide: break
         }
     }
 
