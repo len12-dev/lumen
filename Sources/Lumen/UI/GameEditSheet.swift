@@ -12,6 +12,8 @@ struct GameEditSheet: View {
     @State private var rating = ""
     @State private var loaded = false
 
+    private var game: Game? { library.game(id: gameID) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Modifier le jeu").font(.title2.bold())
@@ -25,9 +27,38 @@ struct GameEditSheet: View {
             Divider()
             Text("Visuels").font(.headline)
             HStack {
-                pickButton("Affiche…", .poster)
-                pickButton("Bannière 1…", .banner)
-                pickButton("Bannière 2…", .banner2)
+                pickButton("Affiche…") { library.setArtwork(from: $0, kind: .poster, for: gameID) }
+                pickButton("Bannière de liste…") { library.setArtwork(from: $0, kind: .card, for: gameID) }
+            }
+
+            Divider()
+            HStack {
+                Text("Galerie (\(game?.galleryFileNames.count ?? 0))").font(.headline)
+                Spacer()
+                Button("Ajouter des images…") {
+                    let panel = NSOpenPanel()
+                    panel.allowedContentTypes = [.image]
+                    panel.allowsMultipleSelection = true
+                    if panel.runModal() == .OK {
+                        library.addGalleryImages(from: panel.urls, for: gameID)
+                    }
+                }
+            }
+            if let game, !game.galleryFileNames.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(game.galleryFileNames.enumerated()), id: \.offset) { index, fileName in
+                            HStack {
+                                Text("Image \(index + 1)")
+                                Spacer()
+                                Button("Retirer") {
+                                    library.removeGalleryImage(fileName, for: gameID)
+                                }
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 160)
             }
 
             HStack {
@@ -45,9 +76,9 @@ struct GameEditSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 520)
+        .frame(width: 560)
         .onAppear {
-            guard !loaded, let game = library.game(id: gameID) else { return }
+            guard !loaded, let game else { return }
             studio = game.studio ?? ""
             year = game.releaseYear.map(String.init) ?? ""
             rating = game.rating ?? ""
@@ -55,13 +86,13 @@ struct GameEditSheet: View {
         }
     }
 
-    private func pickButton(_ title: String, _ kind: ArtKind) -> some View {
+    private func pickButton(_ title: String, onPick: @escaping (URL) -> Void) -> some View {
         Button(title) {
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.image]
             panel.allowsMultipleSelection = false
             if panel.runModal() == .OK, let url = panel.url {
-                library.setArtwork(from: url, kind: kind, for: gameID)
+                onPick(url)
             }
         }
     }

@@ -2,15 +2,14 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-/// Les visuels d'un jeu. Chaque type a un emplacement dans le modèle.
+/// Visuels à emplacement unique. La galerie de la page détail est une liste à part.
 enum ArtKind: CaseIterable {
-    case poster, banner, banner2
+    case poster, card
 
     var suffix: String {
         switch self {
         case .poster: "poster"
-        case .banner: "banner"
-        case .banner2: "banner2"
+        case .card: "card"
         }
     }
 }
@@ -24,10 +23,16 @@ struct Game: Identifiable, Codable, Equatable {
     var releaseYear: Int?
     /// Classification (ex. PEGI 12). Texte libre pour l'instant.
     var rating: String?
-    // Noms de fichiers dans le dossier `banners`. Optionnels pour rester compatibles avec l'ancien JSON.
+    /// Bannière affichée dans la liste de tous les jeux.
+    var cardFileName: String?
+    /// Affiche de la page « À propos du jeu ».
+    var posterFileName: String?
+    /// Images de la page « À propos du jeu » ; il n'y a pas de limite.
+    var galleryFileNames: [String] = []
+
+    // Champs de l'ancien format, lus seulement pour migrer les données.
     var bannerFileName: String?
     var banner2FileName: String?
-    var posterFileName: String?
 
     /// Ligne « Studio · Année · Classification », sans les champs vides.
     var subtitle: String {
@@ -84,31 +89,45 @@ final class GameLibrary: ObservableObject {
         save()
     }
 
-    /// Copie l'image choisie dans le dossier de Lumen et l'associe au jeu.
+    /// Remplace un visuel à emplacement unique (affiche ou bannière de liste).
     func setArtwork(from source: URL, kind: ArtKind, for id: UUID) {
         guard let idx = games.firstIndex(where: { $0.id == id }) else { return }
-        try? FileManager.default.createDirectory(at: artDir, withIntermediateDirectories: true)
         let fileName = "\(id.uuidString)-\(kind.suffix).\(source.pathExtension.lowercased())"
-        let dest = artDir.appendingPathComponent(fileName)
-
-        // Supprime l'ancien fichier de ce type, s'il a un autre nom.
         let key = keyPath(for: kind)
         if let old = games[idx][keyPath: key], old != fileName {
-            try? FileManager.default.removeItem(at: artDir.appendingPathComponent(old))
+            removeFile(old)
         }
-        try? FileManager.default.removeItem(at: dest)
-        do {
-            try FileManager.default.copyItem(at: source, to: dest)
-            games[idx][keyPath: key] = fileName
-            save()
-        } catch {
-            NSLog("Lumen: copie du visuel impossible: \(error)")
+        guard copyFile(from: source, to: fileName) else { return }
+        games[idx][keyPath: key] = fileName
+        save()
+    }
+
+    /// Ajoute une ou plusieurs images à la galerie, sans limite.
+    func addGalleryImages(from sources: [URL], for id: UUID) {
+        guard let idx = games.firstIndex(where: { $0.id == id }) else { return }
+        for source in sources {
+            let fileName = "\(id.uuidString)-gallery-\(UUID().uuidString).\(source.pathExtension.lowercased())"
+            if copyFile(from: source, to: fileName) {
+                games[idx].galleryFileNames.append(fileName)
+            }
         }
+        save()
+    }
+
+    func removeGalleryImage(_ fileName: String, for id: UUID) {
+        guard let idx = games.firstIndex(where: { $0.id == id }) else { return }
+        games[idx].galleryFileNames.removeAll { $0 == fileName }
+        removeFile(fileName)
+        save()
     }
 
     func artwork(_ kind: ArtKind, for game: Game) -> NSImage? {
         guard let name = game[keyPath: keyPath(for: kind)] else { return nil }
-        return NSImage(contentsOf: artDir.appendingPathComponent(name))
+        return image(named: name)
+    }
+
+    func image(named fileName: String) -> NSImage? {
+        NSImage(contentsOf: artDir.appendingPathComponent(fileName))
     }
 
     /// Lance l'app puis tente de la passer en plein écran via l'API d'accessibilité.
@@ -127,9 +146,26 @@ final class GameLibrary: ObservableObject {
     private func keyPath(for kind: ArtKind) -> WritableKeyPath<Game, String?> {
         switch kind {
         case .poster: \.posterFileName
-        case .banner: \.bannerFileName
-        case .banner2: \.banner2FileName
+        case .card: \.cardFileName
         }
+    }
+
+    @discardableResult
+    private func copyFile(from source: URL, to fileName: String) -> Bool {
+        try? FileManager.default.createDirectory(at: artDir, withIntermediateDirectories: true)
+        let dest = artDir.appendingPathComponent(fileName)
+        try? FileManager.default.removeItem(at: dest)
+        do {
+            try FileManager.default.copyItem(at: source, to: dest)
+            return true
+        } catch {
+            NSLog("Lumen: copie impossible: \(error)")
+            return false
+        }
+    }
+
+    private func removeFile(_ fileName: String) {
+        try? FileManager.default.removeItem(at: artDir.appendingPathComponent(fileName))
     }
 
     private func enterFullscreen(pid: pid_t) async {
@@ -152,8 +188,21 @@ final class GameLibrary: ObservableObject {
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([Game].self, from: data) else { return }
+              var decoded = try? JSONDecoder().decode([Game].self, from: data) else { return }
+        // Migration : les anciennes bannières deviennent la bannière de liste et les premières images de la galerie.
+        var migrated = false
+        for i in decoded.indices {
+            let legacy = [decoded[i].bannerFileName, decoded[i].banner2FileName].compactMap { $0 }
+            if !legacy.isEmpty {
+                if decoded[i].cardFileName == nil { decoded[i].cardFileName = legacy[0] }
+                decoded[i].galleryFileNames.insert(contentsOf: legacy, at: 0)
+                decoded[i].bannerFileName = nil
+                decoded[i].banner2FileName = nil
+                migrated = true
+            }
+        }
         games = decoded
+        if migrated { save() }
     }
 
     private func save() {

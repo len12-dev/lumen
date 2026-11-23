@@ -1,16 +1,25 @@
 import AppKit
 import SwiftUI
 
-/// Actions focusables de la page détail, dans l'ordre gauche → droite.
+/// Actions de la rangée du haut de la page détail.
 enum DetailAction: Int, CaseIterable {
     case start, edit
 }
 
-/// Page détail d'un jeu : Démarrer (focus par défaut), titre et sous-titre à droite, affiche et deux bannières.
-/// Les tailles découlent de la hauteur disponible : l'affiche garde son 2:3, les bannières leur 21:9.
+/// Rangées focusables de la page détail : les boutons, ou la galerie en dessous.
+enum DetailRow {
+    case actions, gallery
+}
+
+/// Page « À propos du jeu » : boutons en haut, titre et sous-titre à droite,
+/// affiche à gauche et galerie illimitée défilante à droite.
+/// Les tailles découlent de la hauteur de la fenêtre.
 struct GameDetailView: View {
     let game: Game
-    let focus: DetailAction
+    let row: DetailRow
+    let button: DetailAction
+    let galleryIndex: Int
+
     @EnvironmentObject private var library: GameLibrary
     @Environment(\.uiScale) private var scale
 
@@ -22,9 +31,8 @@ struct GameDetailView: View {
             let available = max(geo.size.height - topPad - headerHeight - footerHeight, 200)
             let posterHeight = min(available, geo.size.height * 0.8)
             let posterWidth = posterHeight * 2 / 3
-            let gap = 20 * scale
-            let bannerHeight = (posterHeight - gap) / 2
-            let bannerWidth = bannerHeight * 21 / 9
+            let thumbHeight = posterHeight * 0.55
+            let thumbWidth = thumbHeight * 21 / 9
 
             VStack(alignment: .leading, spacing: 32 * scale) {
                 HStack(alignment: .top) {
@@ -35,18 +43,11 @@ struct GameDetailView: View {
                 HStack(alignment: .top, spacing: 36 * scale) {
                     poster
                         .frame(width: posterWidth, height: posterHeight)
-                    VStack(spacing: gap) {
-                        Artwork(image: library.artwork(.banner, for: game), fallback: game.name)
-                            .frame(width: bannerWidth, height: bannerHeight)
-                            .clipShape(RoundedRectangle(cornerRadius: 14 * scale))
-                        Artwork(image: library.artwork(.banner2, for: game), fallback: game.name)
-                            .frame(width: bannerWidth, height: bannerHeight)
-                            .clipShape(RoundedRectangle(cornerRadius: 14 * scale))
-                    }
-                    Spacer(minLength: 0)
+                    gallery(thumbWidth: thumbWidth, thumbHeight: thumbHeight)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Spacer(minLength: 0)
-                Text("Stick / Croix : choisir et valider   ·   Gauche / Droite : choisir   ·   Rond : retour")
+                Text("Stick : naviguer   ·   Croix : valider   ·   Haut / Bas : boutons ↔ galerie   ·   Rond : retour")
                     .font(.system(size: 12 * scale))
                     .opacity(0.6)
             }
@@ -62,8 +63,10 @@ struct GameDetailView: View {
 
     private var actions: some View {
         HStack(spacing: 16 * scale) {
-            FocusButton(title: "Démarrer", symbol: "play.fill", focused: focus == .start, prominent: true)
-            FocusButton(title: "Modifier", symbol: "pencil", focused: focus == .edit, prominent: false)
+            FocusButton(title: "Démarrer", symbol: "play.fill",
+                        focused: row == .actions && button == .start, prominent: true)
+            FocusButton(title: "Modifier", symbol: "pencil",
+                        focused: row == .actions && button == .edit, prominent: false)
         }
     }
 
@@ -82,6 +85,43 @@ struct GameDetailView: View {
         Artwork(image: library.artwork(.poster, for: game), fallback: game.name)
             .clipShape(RoundedRectangle(cornerRadius: 14 * scale))
             .shadow(radius: 20 * scale)
+    }
+
+    // MARK: - Galerie
+
+    @ViewBuilder
+    private func gallery(thumbWidth: CGFloat, thumbHeight: CGFloat) -> some View {
+        if game.galleryFileNames.isEmpty {
+            Text("Ajoutez des images dans « Modifier »")
+                .font(.system(size: 18 * scale))
+                .opacity(0.5)
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 20 * scale) {
+                        ForEach(Array(game.galleryFileNames.enumerated()), id: \.offset) { index, fileName in
+                            let focused = row == .gallery && index == galleryIndex
+                            Artwork(image: library.image(named: fileName), fallback: game.name)
+                                .frame(width: thumbWidth, height: thumbHeight)
+                                .clipShape(RoundedRectangle(cornerRadius: 14 * scale))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14 * scale)
+                                        .stroke(.white.opacity(focused ? 0.95 : 0), lineWidth: 3)
+                                )
+                                .scaleEffect(focused ? 1.04 : 1)
+                                .opacity(row == .gallery && !focused ? 0.7 : 1)
+                                .id(index)
+                        }
+                    }
+                    .padding(.vertical, 8 * scale)
+                }
+                .onChange(of: galleryIndex) { newIndex in
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo(newIndex, anchor: .center)
+                    }
+                }
+            }
+        }
     }
 }
 

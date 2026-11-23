@@ -14,8 +14,15 @@ enum Category: String, CaseIterable, Identifiable {
     }
 }
 
+/// Courbes communes à toutes les transitions de l'interface.
+enum LumenMotion {
+    static let switchSpring = Animation.spring(response: 0.45, dampingFraction: 0.85)
+    static let page = Animation.easeInOut(duration: 0.35)
+    static let focus = Animation.easeOut(duration: 0.18)
+}
+
 /// Navigation XMB : catégories en ligne horizontale, éléments en colonne.
-/// Un jeu ouvre sa page détail ; Démarrer y lance l'app.
+/// Un jeu ouvre sa page « À propos » ; Démarrer y lance l'app.
 struct XMBView: View {
     @EnvironmentObject private var library: GameLibrary
     @EnvironmentObject private var input: ControllerInput
@@ -23,7 +30,9 @@ struct XMBView: View {
     @State private var categoryIndex = 0
     @State private var itemIndex = 0
     @State private var detailGameID: UUID?
-    @State private var detailFocus: DetailAction = .start
+    @State private var detailRow: DetailRow = .actions
+    @State private var detailButton: DetailAction = .start
+    @State private var galleryIndex = 0
     @State private var editingGameID: UUID?
     /// Échelle courante, mise à jour quand la fenêtre change de taille.
     @State private var scale: CGFloat = 1
@@ -42,9 +51,11 @@ struct XMBView: View {
             ZStack {
                 LumenBackground()
                 if let game = detailGame {
-                    GameDetailView(game: game, focus: detailFocus)
+                    GameDetailView(game: game, row: detailRow, button: detailButton, galleryIndex: galleryIndex)
+                        .transition(.opacity.combined(with: .scale(scale: 1.03)))
                 } else {
                     browser
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
             }
             .environment(\.uiScale, scale)
@@ -77,6 +88,8 @@ struct XMBView: View {
             HStack(alignment: .top, spacing: 0) {
                 Spacer()
                 itemList
+                    .id(categoryIndex)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
                     .frame(maxWidth: 760 * scale)   // lisible même sur 3440×1440
                 Spacer()
             }
@@ -101,10 +114,10 @@ struct XMBView: View {
                         .opacity(selected ? 1 : 0.0)
                 }
                 .frame(maxWidth: .infinity)
-                .animation(.easeOut(duration: 0.2), value: categoryIndex)
             }
         }
         .padding(.horizontal, 40 * scale)
+        .animation(LumenMotion.switchSpring, value: categoryIndex)
     }
 
     // MARK: - Éléments
@@ -133,13 +146,13 @@ struct XMBView: View {
         .padding(.vertical, 12 * scale)
         .background(RoundedRectangle(cornerRadius: 12 * scale).fill(selected ? Color.white.opacity(0.18) : .clear))
         .opacity(selected ? 1 : 0.6)
-        .animation(.easeOut(duration: 0.15), value: itemIndex)
+        .animation(LumenMotion.focus, value: itemIndex)
     }
 
-    /// Carte bannière 21:9 d'un jeu.
+    /// Carte de la liste : la bannière de liste du jeu, distincte de sa page « À propos ».
     private func bannerCard(game: Game, selected: Bool) -> some View {
         ZStack(alignment: .bottomLeading) {
-            Artwork(image: library.artwork(.banner, for: game), fallback: game.name)
+            Artwork(image: library.artwork(.card, for: game), fallback: game.name)
             LinearGradient(colors: [.black.opacity(0.85), .clear], startPoint: .bottom, endPoint: .center)
             Text(game.name)
                 .font(.system(size: (selected ? 26 : 20) * scale, weight: .semibold))
@@ -151,7 +164,7 @@ struct XMBView: View {
         .overlay(RoundedRectangle(cornerRadius: 14 * scale).stroke(.white.opacity(selected ? 0.9 : 0), lineWidth: 2))
         .opacity(selected ? 1 : 0.6)
         .scaleEffect(selected ? 1 : 0.97)
-        .animation(.easeOut(duration: 0.15), value: itemIndex)
+        .animation(LumenMotion.focus, value: itemIndex)
     }
 
     private var footer: some View {
@@ -175,31 +188,54 @@ struct XMBView: View {
             return
         }
 
-        switch action {
-        case .left: categoryIndex = max(0, categoryIndex - 1); itemIndex = 0
-        case .right: categoryIndex = min(Category.allCases.count - 1, categoryIndex + 1); itemIndex = 0
-        case .prevTab: categoryIndex = max(0, categoryIndex - 1); itemIndex = 0
-        case .nextTab: categoryIndex = min(Category.allCases.count - 1, categoryIndex + 1); itemIndex = 0
-        case .up: itemIndex = max(0, itemIndex - 1)
-        case .down: itemIndex = min(itemCount - 1, itemIndex + 1)
-        case .confirm: openSelection()
-        case .banner: editSelectedGame()
-        case .back, .guide: break   // Guide : overlay, jalon 2
+        withAnimation(LumenMotion.switchSpring) {
+            switch action {
+            case .left, .prevTab: categoryIndex = max(0, categoryIndex - 1); itemIndex = 0
+            case .right, .nextTab: categoryIndex = min(Category.allCases.count - 1, categoryIndex + 1); itemIndex = 0
+            case .up: itemIndex = max(0, itemIndex - 1)
+            case .down: itemIndex = min(itemCount - 1, itemIndex + 1)
+            case .confirm: openSelection()
+            case .banner: editSelectedGame()
+            case .back, .guide: break   // Guide : overlay, jalon 2
+            }
         }
     }
 
     private func handleDetail(_ action: InputAction, game: Game) {
-        switch action {
-        case .left: detailFocus = .start
-        case .right: detailFocus = .edit
-        case .confirm:
-            switch detailFocus {
-            case .start: library.launch(game)
-            case .edit: editingGameID = game.id
+        let galleryCount = game.galleryFileNames.count
+        withAnimation(LumenMotion.focus) {
+            switch action {
+            case .left:
+                if detailRow == .actions { detailButton = .start }
+                else { galleryIndex = max(0, galleryIndex - 1) }
+            case .right:
+                if detailRow == .actions { detailButton = .edit }
+                else if galleryCount > 0 { galleryIndex = min(galleryCount - 1, galleryIndex + 1) }
+            case .down:
+                if detailRow == .actions, galleryCount > 0 {
+                    detailRow = .gallery
+                    galleryIndex = 0
+                }
+            case .up:
+                if detailRow == .gallery { detailRow = .actions }
+            case .confirm:
+                if detailRow == .actions {
+                    switch detailButton {
+                    case .start: library.launch(game)
+                    case .edit: editingGameID = game.id
+                    }
+                }
+            case .banner:
+                editingGameID = game.id
+            case .back:
+                if detailRow == .gallery {
+                    detailRow = .actions
+                } else {
+                    closeDetail()
+                }
+            case .prevTab, .nextTab, .guide:
+                break
             }
-        case .banner: editingGameID = game.id
-        case .back: detailGameID = nil; detailFocus = .start
-        case .up, .down, .prevTab, .nextTab, .guide: break
         }
     }
 
@@ -208,9 +244,25 @@ struct XMBView: View {
         if itemIndex == 0 {
             pickApp()
         } else if itemIndex - 1 < library.games.count {
-            detailGameID = library.games[itemIndex - 1].id
-            detailFocus = .start
+            openDetail(library.games[itemIndex - 1])
         }
+    }
+
+    private func openDetail(_ game: Game) {
+        detailRow = .actions
+        detailButton = .start
+        galleryIndex = 0
+        withAnimation(LumenMotion.page) {
+            detailGameID = game.id
+        }
+    }
+
+    private func closeDetail() {
+        withAnimation(LumenMotion.page) {
+            detailGameID = nil
+        }
+        detailRow = .actions
+        detailButton = .start
     }
 
     private func editSelectedGame() {
