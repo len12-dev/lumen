@@ -29,6 +29,12 @@ final class SpotifyService: ObservableObject {
     private var pollTask: Task<Void, Never>?
 
     init() {
+        reloadConfig()
+    }
+
+    /// Relit le Client ID (Réglages ou fichier) et restaure la session si elle existe.
+    func reloadConfig() {
+        pollTask?.cancel()
         config = SpotifyConfig.load()
         guard let config, !config.clientID.isEmpty else {
             state = .notConfigured
@@ -38,6 +44,8 @@ final class SpotifyService: ObservableObject {
         if tokens != nil {
             state = .connected
             startPolling()
+        } else {
+            state = .disconnected
         }
     }
 

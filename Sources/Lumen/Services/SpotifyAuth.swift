@@ -12,9 +12,20 @@ struct SpotifyConfig: Codable {
 
     static let fileURL = GameLibrary.supportDir.appendingPathComponent("spotify.json")
 
+    /// Clé des Réglages. Prioritaire sur le fichier, pour que l'utilisateur n'ait pas à éditer de JSON.
+    static let defaultsKey = "spotifyClientID"
+
     static func load() -> SpotifyConfig? {
+        if let saved = UserDefaults.standard.string(forKey: defaultsKey), !saved.isEmpty {
+            return SpotifyConfig(clientID: saved)
+        }
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
         return try? JSONDecoder().decode(SpotifyConfig.self, from: data)
+    }
+
+    static func saveClientID(_ clientID: String) {
+        let trimmed = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(trimmed.isEmpty ? nil : trimmed, forKey: defaultsKey)
     }
 
     /// Spotify exige 127.0.0.1 (et non localhost) avec un port explicite.

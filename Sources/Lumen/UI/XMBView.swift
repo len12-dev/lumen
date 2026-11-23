@@ -39,6 +39,7 @@ struct XMBView: View {
     @State private var scale: CGFloat = 1
     /// Contrôle sélectionné dans la catégorie Musique.
     @State private var musicFocus = 0
+    @State private var showSpotifySettings = false
 
     private var category: Category { Category.allCases[categoryIndex] }
 
@@ -71,6 +72,10 @@ struct XMBView: View {
         .foregroundStyle(.white)
         .onChange(of: input.actionID) {
             handle(input.lastAction)
+        }
+        .sheet(isPresented: $showSpotifySettings) {
+            SpotifySettingsSheet()
+                .environmentObject(spotify)
         }
         .sheet(isPresented: Binding(
             get: { editingGameID != nil },
@@ -136,6 +141,8 @@ struct XMBView: View {
             }
         } else if category == .music {
             MusicView(focus: musicFocus)
+        } else if category == .settings {
+            textRow(title: "Client ID Spotify", symbol: "key.fill", selected: true)
         } else {
             textRow(title: "Bientôt disponible", symbol: "clock", selected: true)
         }
@@ -207,7 +214,9 @@ struct XMBView: View {
             case .up: itemIndex = max(0, itemIndex - 1)
             case .down: itemIndex = min(itemCount - 1, itemIndex + 1)
             case .confirm:
-                if category == .music { musicConfirm() } else { openSelection() }
+                if category == .music { musicConfirm() }
+                else if category == .settings { showSpotifySettings = true }
+                else { openSelection() }
             case .banner: editSelectedGame()
             case .back, .guide: break   // Guide : overlay, jalon 2
             }
