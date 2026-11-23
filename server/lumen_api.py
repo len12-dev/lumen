@@ -86,6 +86,8 @@ def read_token():
 def sniff_image(data):
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         return "image/png", "png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif", "gif"
     if data[:3] == b"\xff\xd8\xff":
         return "image/jpeg", "jpg"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
@@ -312,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
         data = self.rfile.read(length)
         mime, ext = sniff_image(data)
         if mime is None:
-            return self.error(415, "format non supporté (PNG, JPEG, WebP)")
+            return self.error(415, "format non supporté (PNG, JPEG, WebP, GIF)")
 
         image_id = str(uuid.uuid4())
         rel = os.path.join(game_id, f"{image_id}.{ext}")

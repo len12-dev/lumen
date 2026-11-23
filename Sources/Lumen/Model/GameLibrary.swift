@@ -121,13 +121,15 @@ final class GameLibrary: ObservableObject {
         save()
     }
 
-    func artwork(_ kind: ArtKind, for game: Game) -> NSImage? {
+    /// Fichier d'un visuel à emplacement unique, s'il existe.
+    func artURL(_ kind: ArtKind, for game: Game) -> URL? {
         guard let name = game[keyPath: keyPath(for: kind)] else { return nil }
-        return image(named: name)
+        return imageURL(named: name)
     }
 
-    func image(named fileName: String) -> NSImage? {
-        NSImage(contentsOf: artDir.appendingPathComponent(fileName))
+    /// Fichier d'une image stockée (affiche, bannière ou galerie).
+    func imageURL(named fileName: String) -> URL {
+        artDir.appendingPathComponent(fileName)
     }
 
     /// Lance l'app puis tente de la passer en plein écran via l'API d'accessibilité.

@@ -164,7 +164,7 @@ struct XMBView: View {
     /// Carte de la liste : la bannière de liste du jeu, distincte de sa page « À propos ».
     private func bannerCard(game: Game, selected: Bool) -> some View {
         ZStack(alignment: .bottomLeading) {
-            Artwork(image: library.artwork(.card, for: game), fallback: game.name)
+            Artwork(url: library.artURL(.card, for: game), fallback: game.name)
             LinearGradient(colors: [.black.opacity(0.85), .clear], startPoint: .bottom, endPoint: .center)
             Text(game.name)
                 .font(.system(size: (selected ? 26 : 20) * scale, weight: .semibold))

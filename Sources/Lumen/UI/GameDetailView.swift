@@ -82,7 +82,7 @@ struct GameDetailView: View {
     }
 
     private var poster: some View {
-        Artwork(image: library.artwork(.poster, for: game), fallback: game.name)
+        Artwork(url: library.artURL(.poster, for: game), fallback: game.name)
             .clipShape(RoundedRectangle(cornerRadius: 14 * scale))
             .shadow(radius: 20 * scale)
     }
@@ -101,7 +101,7 @@ struct GameDetailView: View {
                     HStack(spacing: 20 * scale) {
                         ForEach(Array(game.galleryFileNames.enumerated()), id: \.offset) { index, fileName in
                             let focused = row == .gallery && index == galleryIndex
-                            Artwork(image: library.image(named: fileName), fallback: game.name)
+                            Artwork(url: library.imageURL(named: fileName), fallback: game.name)
                                 .frame(width: thumbWidth, height: thumbHeight)
                                 .clipShape(RoundedRectangle(cornerRadius: 14 * scale))
                                 .overlay(
@@ -122,28 +122,6 @@ struct GameDetailView: View {
                 }
             }
         }
-    }
-}
-
-/// Image de visuel avec repli dégradé + nom quand aucun fichier n'est défini.
-struct Artwork: View {
-    let image: NSImage?
-    let fallback: String
-
-    var body: some View {
-        ZStack {
-            if let image {
-                Image(nsImage: image).resizable().scaledToFill()
-            } else {
-                LinearGradient(colors: [.indigo, .blue.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Text(fallback)
-                    .font(.headline)
-                    .multilineTextAlignment(.center)
-                    .padding()
-                    .opacity(0.7)
-            }
-        }
-        .clipped()
     }
 }
 
