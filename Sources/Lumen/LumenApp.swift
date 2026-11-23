@@ -14,12 +14,14 @@ struct LumenApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var library = GameLibrary()
     @StateObject private var input = ControllerInput()
+    @StateObject private var spotify = SpotifyService()
 
     var body: some Scene {
         WindowGroup {
             XMBView()
                 .environmentObject(library)
                 .environmentObject(input)
+                .environmentObject(spotify)
                 .frame(minWidth: 1280, minHeight: 540)
                 .onAppear { input.start() }
         }

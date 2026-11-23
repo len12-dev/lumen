@@ -26,6 +26,7 @@ enum LumenMotion {
 struct XMBView: View {
     @EnvironmentObject private var library: GameLibrary
     @EnvironmentObject private var input: ControllerInput
+    @EnvironmentObject private var spotify: SpotifyService
 
     @State private var categoryIndex = 0
     @State private var itemIndex = 0
@@ -36,6 +37,8 @@ struct XMBView: View {
     @State private var editingGameID: UUID?
     /// Échelle courante, mise à jour quand la fenêtre change de taille.
     @State private var scale: CGFloat = 1
+    /// Contrôle sélectionné dans la catégorie Musique.
+    @State private var musicFocus = 0
 
     private var category: Category { Category.allCases[categoryIndex] }
 
@@ -131,6 +134,8 @@ struct XMBView: View {
                     bannerCard(game: game, selected: itemIndex == index + 1)
                 }
             }
+        } else if category == .music {
+            MusicView(focus: musicFocus)
         } else {
             textRow(title: "Bientôt disponible", symbol: "clock", selected: true)
         }
@@ -188,13 +193,21 @@ struct XMBView: View {
             return
         }
 
+        // Dans Musique, gauche/droite parcourent les contrôles ; L1/R1 changent de catégorie.
+        if category == .music, action == .left || action == .right {
+            let count = MusicView.controlCount(for: spotify.state)
+            musicFocus = action == .left ? max(0, musicFocus - 1) : min(count - 1, musicFocus + 1)
+            return
+        }
+
         withAnimation(LumenMotion.switchSpring) {
             switch action {
-            case .left, .prevTab: categoryIndex = max(0, categoryIndex - 1); itemIndex = 0
-            case .right, .nextTab: categoryIndex = min(Category.allCases.count - 1, categoryIndex + 1); itemIndex = 0
+            case .left, .prevTab: categoryIndex = max(0, categoryIndex - 1); itemIndex = 0; musicFocus = 0
+            case .right, .nextTab: categoryIndex = min(Category.allCases.count - 1, categoryIndex + 1); itemIndex = 0; musicFocus = 0
             case .up: itemIndex = max(0, itemIndex - 1)
             case .down: itemIndex = min(itemCount - 1, itemIndex + 1)
-            case .confirm: openSelection()
+            case .confirm:
+                if category == .music { musicConfirm() } else { openSelection() }
             case .banner: editSelectedGame()
             case .back, .guide: break   // Guide : overlay, jalon 2
             }
@@ -236,6 +249,21 @@ struct XMBView: View {
             case .prevTab, .nextTab, .guide:
                 break
             }
+        }
+    }
+
+    private func musicConfirm() {
+        switch spotify.state {
+        case .connected:
+            switch musicFocus {
+            case 0: spotify.previous()
+            case 1: spotify.togglePlayPause()
+            default: spotify.next()
+            }
+        case .notConfigured:
+            break
+        case .disconnected, .error:
+            spotify.connect()
         }
     }
 
