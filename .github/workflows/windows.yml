@@ -1,0 +1,30 @@
+name: Windows build
+
+on:
+  push:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer PyInstaller
+        run: pip install pyinstaller
+
+      - name: Compiler Lumen.exe
+        run: pyinstaller --onefile --windowed --name Lumen windows/lumen_win.py
+
+      - name: Publier le .exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lumen-windows
+          path: dist/Lumen.exe
