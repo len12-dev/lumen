@@ -24,15 +24,9 @@ struct XMBView: View {
 
     private var category: Category { Category.allCases[categoryIndex] }
 
-    /// Éléments de la catégorie courante. Le bouton « Ajouter » est toujours en tête pour Jeux.
-    private var items: [XMBItem] {
-        switch category {
-        case .games:
-            return [XMBItem(id: "add", title: "+ Ajouter une application", symbol: "plus.circle", icon: nil)]
-                + library.games.map { XMBItem(id: $0.id.uuidString, title: $0.name, symbol: nil, icon: library.icon(for: $0)) }
-        default:
-            return [XMBItem(id: "soon", title: "Bientôt disponible", symbol: "clock", icon: nil)]
-        }
+    /// Nombre d'éléments de la catégorie courante (la case 0 est « Ajouter » dans Jeux).
+    private var itemCount: Int {
+        category == .games ? library.games.count + 1 : 1
     }
 
     var body: some View {
@@ -92,35 +86,64 @@ struct XMBView: View {
 
     // MARK: - Éléments
 
+    @ViewBuilder
     private var itemList: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                let selected = index == itemIndex
-                HStack(spacing: 16) {
-                    if let icon = item.icon {
-                        Image(nsImage: icon).resizable().frame(width: 40, height: 40)
-                    } else if let symbol = item.symbol {
-                        Image(systemName: symbol).font(.system(size: 26)).frame(width: 40, height: 40)
-                    }
-                    Text(item.title)
-                        .font(.system(size: selected ? 28 : 22, weight: selected ? .semibold : .regular))
-                    Spacer()
+        if category == .games {
+            VStack(alignment: .leading, spacing: 14) {
+                addRow(selected: itemIndex == 0)
+                ForEach(Array(library.games.enumerated()), id: \.element.id) { index, game in
+                    bannerCard(game: game, selected: itemIndex == index + 1)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(selected ? Color.white.opacity(0.18) : Color.clear)
-                )
-                .opacity(selected ? 1 : 0.6)
-                .animation(.easeOut(duration: 0.15), value: itemIndex)
             }
+        } else {
+            textRow(title: "Bientôt disponible", symbol: "clock", selected: true)
         }
+    }
+
+    private func addRow(selected: Bool) -> some View {
+        textRow(title: "+ Ajouter une application", symbol: "plus.circle", selected: selected)
+    }
+
+    private func textRow(title: String, symbol: String, selected: Bool) -> some View {
+        HStack(spacing: 16) {
+            Image(systemName: symbol).font(.system(size: 26)).frame(width: 40, height: 40)
+            Text(title).font(.system(size: selected ? 28 : 22, weight: selected ? .semibold : .regular))
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(selected ? Color.white.opacity(0.18) : .clear))
+        .opacity(selected ? 1 : 0.6)
+        .animation(.easeOut(duration: 0.15), value: itemIndex)
+    }
+
+    /// Carte bannière 21:9 d'un jeu. Sans bannière, un dégradé avec le nom.
+    private func bannerCard(game: Game, selected: Bool) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            if let banner = library.banner(for: game) {
+                Image(nsImage: banner).resizable().scaledToFill()
+            } else {
+                LinearGradient(colors: [.indigo, .blue.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                Image(nsImage: library.icon(for: game))
+                    .resizable().scaledToFit().padding(24).opacity(0.5)
+            }
+            LinearGradient(colors: [.black.opacity(0.85), .clear], startPoint: .bottom, endPoint: .center)
+            Text(game.name)
+                .font(.system(size: selected ? 26 : 20, weight: .semibold))
+                .padding(16)
+        }
+        .frame(height: selected ? 200 : 150)
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(selected ? 0.9 : 0), lineWidth: 2))
+        .opacity(selected ? 1 : 0.6)
+        .scaleEffect(selected ? 1 : 0.97)
+        .animation(.easeOut(duration: 0.15), value: itemIndex)
     }
 
     private var footer: some View {
         HStack {
-            Text("Croix / Entrée : valider   ·   Rond / Échap : retour   ·   Guide : overlay")
+            Text("Croix / Entrée : valider   ·   Y / B : changer la bannière   ·   Rond / Échap : retour   ·   Guide : overlay")
                 .font(.caption)
                 .opacity(0.6)
             Spacer()
@@ -137,18 +160,31 @@ struct XMBView: View {
         case .left: categoryIndex = max(0, categoryIndex - 1); itemIndex = 0
         case .right: categoryIndex = min(Category.allCases.count - 1, categoryIndex + 1); itemIndex = 0
         case .up: itemIndex = max(0, itemIndex - 1)
-        case .down: itemIndex = min(items.count - 1, itemIndex + 1)
+        case .down: itemIndex = min(itemCount - 1, itemIndex + 1)
         case .confirm: confirm()
-        case .back, .guide: break   // Guide : overlay, traité au jalon 2
+        case .banner: changeBanner()
+        case .back, .guide: break   // Guide : overlay, jalon 2
         }
     }
 
     private func confirm() {
-        guard category == .games, itemIndex < items.count else { return }
+        guard category == .games else { return }
         if itemIndex == 0 {
             pickApp()
-        } else {
+        } else if itemIndex - 1 < library.games.count {
             library.launch(library.games[itemIndex - 1])
+        }
+    }
+
+    private func changeBanner() {
+        guard category == .games, itemIndex > 0, itemIndex - 1 < library.games.count else { return }
+        let game = library.games[itemIndex - 1]
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choisir une bannière pour \(game.name)"
+        if panel.runModal() == .OK, let url = panel.url {
+            library.setBanner(from: url, for: game)
         }
     }
 
@@ -162,11 +198,4 @@ struct XMBView: View {
             library.add(appURL: url)
         }
     }
-}
-
-struct XMBItem: Identifiable {
-    let id: String
-    let title: String
-    let symbol: String?
-    let icon: NSImage?
 }

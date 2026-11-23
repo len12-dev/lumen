@@ -4,7 +4,7 @@ import GameController
 import SwiftUI
 
 enum InputAction: Equatable {
-    case up, down, left, right, confirm, back, guide
+    case up, down, left, right, confirm, back, guide, banner
 }
 
 /// Entrées manette (GameController) + repli clavier pour le développement.
@@ -27,6 +27,7 @@ final class ControllerInput: ObservableObject {
             case 124: .right
             case 36, 49: .confirm   // Entrée / Espace
             case 53, 51: .back      // Échap / Retour arrière
+            case 11: .banner        // B : changer la bannière
             default: nil
             }
             if let action {
@@ -59,6 +60,9 @@ final class ControllerInput: ObservableObject {
         }
         pad.buttonB.pressedChangedHandler = { [weak self] _, _, pressed in
             if pressed { Task { @MainActor in self?.emit(.back) } }
+        }
+        pad.buttonY.pressedChangedHandler = { [weak self] _, _, pressed in
+            if pressed { Task { @MainActor in self?.emit(.banner) } }
         }
         pad.buttonMenu.pressedChangedHandler = { [weak self] _, _, pressed in
             // La touche Guide est le sujet de l'overlay (jalon 2). Ici on la reçoit si l'OS la transmet.
