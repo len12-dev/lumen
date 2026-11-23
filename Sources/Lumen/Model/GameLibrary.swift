@@ -2,13 +2,41 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+/// Les visuels d'un jeu. Chaque type a un emplacement dans le modèle.
+enum ArtKind: CaseIterable {
+    case poster, banner, banner2
+
+    var suffix: String {
+        switch self {
+        case .poster: "poster"
+        case .banner: "banner"
+        case .banner2: "banner2"
+        }
+    }
+}
+
 struct Game: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var name: String
     var bundlePath: String
     var playSeconds: Double = 0
-    /// Nom du fichier de bannière dans le dossier `banners`. Optionnel pour rester compatible avec l'ancien JSON.
+    var studio: String?
+    var releaseYear: Int?
+    /// Classification (ex. PEGI 12). Texte libre pour l'instant.
+    var rating: String?
+    // Noms de fichiers dans le dossier `banners`. Optionnels pour rester compatibles avec l'ancien JSON.
     var bannerFileName: String?
+    var banner2FileName: String?
+    var posterFileName: String?
+
+    /// Ligne « Studio · Année · Classification », sans les champs vides.
+    var subtitle: String {
+        var parts: [String] = []
+        if let studio, !studio.isEmpty { parts.append(studio) }
+        if let releaseYear { parts.append(String(releaseYear)) }
+        if let rating, !rating.isEmpty { parts.append(rating) }
+        return parts.isEmpty ? "Informations à compléter" : parts.joined(separator: " · ")
+    }
 }
 
 /// Bibliothèque persistée en JSON dans Application Support.
@@ -25,9 +53,13 @@ final class GameLibrary: ObservableObject {
     }()
 
     private let fileURL = GameLibrary.supportDir.appendingPathComponent("games.json")
-    private let bannersDir = GameLibrary.supportDir.appendingPathComponent("banners", isDirectory: true)
+    private let artDir = GameLibrary.supportDir.appendingPathComponent("artwork", isDirectory: true)
 
     init() { load() }
+
+    func game(id: UUID) -> Game? {
+        games.first { $0.id == id }
+    }
 
     func add(appURL: URL) {
         guard appURL.pathExtension == "app" else { return }
@@ -43,28 +75,40 @@ final class GameLibrary: ObservableObject {
         save()
     }
 
+    /// Met à jour les informations textuelles d'un jeu.
+    func updateInfo(id: UUID, studio: String?, releaseYear: Int?, rating: String?) {
+        guard let idx = games.firstIndex(where: { $0.id == id }) else { return }
+        games[idx].studio = studio?.trimmingCharacters(in: .whitespaces).nonEmpty
+        games[idx].releaseYear = releaseYear
+        games[idx].rating = rating?.trimmingCharacters(in: .whitespaces).nonEmpty
+        save()
+    }
+
     /// Copie l'image choisie dans le dossier de Lumen et l'associe au jeu.
-    func setBanner(from source: URL, for game: Game) {
-        guard let idx = games.firstIndex(where: { $0.id == game.id }) else { return }
-        try? FileManager.default.createDirectory(at: bannersDir, withIntermediateDirectories: true)
-        let fileName = "\(game.id.uuidString).\(source.pathExtension.lowercased())"
-        let dest = bannersDir.appendingPathComponent(fileName)
-        if let old = games[idx].bannerFileName, old != fileName {
-            try? FileManager.default.removeItem(at: bannersDir.appendingPathComponent(old))
+    func setArtwork(from source: URL, kind: ArtKind, for id: UUID) {
+        guard let idx = games.firstIndex(where: { $0.id == id }) else { return }
+        try? FileManager.default.createDirectory(at: artDir, withIntermediateDirectories: true)
+        let fileName = "\(id.uuidString)-\(kind.suffix).\(source.pathExtension.lowercased())"
+        let dest = artDir.appendingPathComponent(fileName)
+
+        // Supprime l'ancien fichier de ce type, s'il a un autre nom.
+        let key = keyPath(for: kind)
+        if let old = games[idx][keyPath: key], old != fileName {
+            try? FileManager.default.removeItem(at: artDir.appendingPathComponent(old))
         }
         try? FileManager.default.removeItem(at: dest)
         do {
             try FileManager.default.copyItem(at: source, to: dest)
-            games[idx].bannerFileName = fileName
+            games[idx][keyPath: key] = fileName
             save()
         } catch {
-            NSLog("Lumen: copie de bannière impossible: \(error)")
+            NSLog("Lumen: copie du visuel impossible: \(error)")
         }
     }
 
-    func banner(for game: Game) -> NSImage? {
-        guard let name = game.bannerFileName else { return nil }
-        return NSImage(contentsOf: bannersDir.appendingPathComponent(name))
+    func artwork(_ kind: ArtKind, for game: Game) -> NSImage? {
+        guard let name = game[keyPath: keyPath(for: kind)] else { return nil }
+        return NSImage(contentsOf: artDir.appendingPathComponent(name))
     }
 
     /// Lance l'app puis tente de la passer en plein écran via l'API d'accessibilité.
@@ -78,6 +122,14 @@ final class GameLibrary: ObservableObject {
 
     func icon(for game: Game) -> NSImage {
         NSWorkspace.shared.icon(forFile: game.bundlePath)
+    }
+
+    private func keyPath(for kind: ArtKind) -> WritableKeyPath<Game, String?> {
+        switch kind {
+        case .poster: \.posterFileName
+        case .banner: \.bannerFileName
+        case .banner2: \.banner2FileName
+        }
     }
 
     private func enterFullscreen(pid: pid_t) async {
@@ -108,4 +160,8 @@ final class GameLibrary: ObservableObject {
         guard let data = try? JSONEncoder().encode(games) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }

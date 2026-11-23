@@ -20,6 +20,8 @@ final class ControllerInput: ObservableObject {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
+            // Ne pas avaler les touches quand un champ de texte a le focus (espace, Entrée…).
+            if NSApp.keyWindow?.firstResponder is NSTextView { return event }
             let action: InputAction? = switch event.keyCode {
             case 126: .up
             case 125: .down

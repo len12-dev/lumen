@@ -15,14 +15,20 @@ enum Category: String, CaseIterable, Identifiable {
 }
 
 /// Navigation XMB : catégories en ligne horizontale, éléments en colonne.
+/// Un jeu ouvre sa page détail ; Démarrer y lance l'app.
 struct XMBView: View {
     @EnvironmentObject private var library: GameLibrary
     @EnvironmentObject private var input: ControllerInput
 
     @State private var categoryIndex = 0
     @State private var itemIndex = 0
+    @State private var detailGameID: UUID?
+    @State private var detailFocus: DetailAction = .start
+    @State private var editingGameID: UUID?
 
     private var category: Category { Category.allCases[categoryIndex] }
+
+    private var detailGame: Game? { detailGameID.flatMap { library.game(id: $0) } }
 
     /// Nombre d'éléments de la catégorie courante (la case 0 est « Ajouter » dans Jeux).
     private var itemCount: Int {
@@ -31,7 +37,35 @@ struct XMBView: View {
 
     var body: some View {
         ZStack {
-            background
+            if let game = detailGame {
+                GameDetailView(game: game, focus: detailFocus)
+            } else {
+                browser
+            }
+        }
+        .foregroundStyle(.white)
+        .onChange(of: input.actionID) {
+            handle(input.lastAction)
+        }
+        .sheet(isPresented: Binding(
+            get: { editingGameID != nil },
+            set: { if !$0 { editingGameID = nil } }
+        )) {
+            if let id = editingGameID {
+                GameEditSheet(gameID: id)
+                    .environmentObject(library)
+            }
+        }
+    }
+
+    private var browser: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Color(red: 0.05, green: 0.10, blue: 0.30), Color(red: 0.02, green: 0.03, blue: 0.10)],
+                startPoint: .top, endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
             VStack(spacing: 0) {
                 Spacer().frame(height: 90)
                 categoryBar
@@ -46,20 +80,6 @@ struct XMBView: View {
                 footer
             }
         }
-        .foregroundStyle(.white)
-        .onChange(of: input.actionID) {
-            handle(input.lastAction)
-        }
-    }
-
-    // MARK: - Fond
-
-    private var background: some View {
-        LinearGradient(
-            colors: [Color(red: 0.05, green: 0.10, blue: 0.30), Color(red: 0.02, green: 0.03, blue: 0.10)],
-            startPoint: .top, endPoint: .bottom
-        )
-        .ignoresSafeArea()
     }
 
     // MARK: - Catégories
@@ -90,7 +110,7 @@ struct XMBView: View {
     private var itemList: some View {
         if category == .games {
             VStack(alignment: .leading, spacing: 14) {
-                addRow(selected: itemIndex == 0)
+                textRow(title: "+ Ajouter une application", symbol: "plus.circle", selected: itemIndex == 0)
                 ForEach(Array(library.games.enumerated()), id: \.element.id) { index, game in
                     bannerCard(game: game, selected: itemIndex == index + 1)
                 }
@@ -98,10 +118,6 @@ struct XMBView: View {
         } else {
             textRow(title: "Bientôt disponible", symbol: "clock", selected: true)
         }
-    }
-
-    private func addRow(selected: Bool) -> some View {
-        textRow(title: "+ Ajouter une application", symbol: "plus.circle", selected: selected)
     }
 
     private func textRow(title: String, symbol: String, selected: Bool) -> some View {
@@ -117,16 +133,10 @@ struct XMBView: View {
         .animation(.easeOut(duration: 0.15), value: itemIndex)
     }
 
-    /// Carte bannière 21:9 d'un jeu. Sans bannière, un dégradé avec le nom.
+    /// Carte bannière 21:9 d'un jeu.
     private func bannerCard(game: Game, selected: Bool) -> some View {
         ZStack(alignment: .bottomLeading) {
-            if let banner = library.banner(for: game) {
-                Image(nsImage: banner).resizable().scaledToFill()
-            } else {
-                LinearGradient(colors: [.indigo, .blue.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Image(nsImage: library.icon(for: game))
-                    .resizable().scaledToFit().padding(24).opacity(0.5)
-            }
+            Artwork(image: library.artwork(.banner, for: game), fallback: game.name)
             LinearGradient(colors: [.black.opacity(0.85), .clear], startPoint: .bottom, endPoint: .center)
             Text(game.name)
                 .font(.system(size: selected ? 26 : 20, weight: .semibold))
@@ -143,7 +153,7 @@ struct XMBView: View {
 
     private var footer: some View {
         HStack {
-            Text("Croix / Entrée : valider   ·   Y / B : changer la bannière   ·   Rond / Échap : retour   ·   Guide : overlay")
+            Text("Croix / Entrée : ouvrir   ·   Y / B : modifier le jeu   ·   Rond / Échap : retour   ·   Guide : overlay")
                 .font(.caption)
                 .opacity(0.6)
             Spacer()
@@ -155,37 +165,52 @@ struct XMBView: View {
     // MARK: - Navigation
 
     private func handle(_ action: InputAction?) {
-        guard let action else { return }
+        guard let action, editingGameID == nil else { return }
+
+        if let game = detailGame {
+            handleDetail(action, game: game)
+            return
+        }
+
         switch action {
         case .left: categoryIndex = max(0, categoryIndex - 1); itemIndex = 0
         case .right: categoryIndex = min(Category.allCases.count - 1, categoryIndex + 1); itemIndex = 0
         case .up: itemIndex = max(0, itemIndex - 1)
         case .down: itemIndex = min(itemCount - 1, itemIndex + 1)
-        case .confirm: confirm()
-        case .banner: changeBanner()
+        case .confirm: openSelection()
+        case .banner: editSelectedGame()
         case .back, .guide: break   // Guide : overlay, jalon 2
         }
     }
 
-    private func confirm() {
+    private func handleDetail(_ action: InputAction, game: Game) {
+        switch action {
+        case .left: detailFocus = .start
+        case .right: detailFocus = .edit
+        case .confirm:
+            switch detailFocus {
+            case .start: library.launch(game)
+            case .edit: editingGameID = game.id
+            }
+        case .banner: editingGameID = game.id
+        case .back: detailGameID = nil; detailFocus = .start
+        case .up, .down, .guide: break
+        }
+    }
+
+    private func openSelection() {
         guard category == .games else { return }
         if itemIndex == 0 {
             pickApp()
         } else if itemIndex - 1 < library.games.count {
-            library.launch(library.games[itemIndex - 1])
+            detailGameID = library.games[itemIndex - 1].id
+            detailFocus = .start
         }
     }
 
-    private func changeBanner() {
+    private func editSelectedGame() {
         guard category == .games, itemIndex > 0, itemIndex - 1 < library.games.count else { return }
-        let game = library.games[itemIndex - 1]
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = false
-        panel.message = "Choisir une bannière pour \(game.name)"
-        if panel.runModal() == .OK, let url = panel.url {
-            library.setBanner(from: url, for: game)
-        }
+        editingGameID = library.games[itemIndex - 1].id
     }
 
     private func pickApp() {
